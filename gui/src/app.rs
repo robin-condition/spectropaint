@@ -36,7 +36,7 @@ impl SpectrogramApp {
         let channels = audio.channels();
         println!("{}", channels);
         let samples: Vec<_> = audio.step_by(channels as usize).collect();
-        let res = spectrogram::analyze::<u8>(&samples, 1500usize).unwrap();
+        let res = spectrogram::analyze_st::<u8>(&samples, 1500usize).unwrap();
         res.save("dest.png").unwrap();
         res
     }
