@@ -1,0 +1,11 @@
+[package]
+name = "spectrogram"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+exr = "1.74.0"
+image = "0.25.9"
+realfft = "3.5.0"
+rodio = "0.21.1"
+rustfft = "6.4.1"
