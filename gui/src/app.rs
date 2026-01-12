@@ -5,7 +5,6 @@ use egui::{TextureHandle, TextureOptions, Vec2, load::SizedTexture};
 use egui_file_dialog::FileDialog;
 use image::{EncodableLayout, ImageBuffer, Luma};
 use rodio::{OutputStream, Source, buffer::SamplesBuffer};
-use spectrogram::inverse_mt;
 
 pub struct SpectrogramApp {
     file_dialog: FileDialog,
@@ -39,16 +38,25 @@ impl SpectrogramApp {
         println!("{}", channels);
         let samples: Vec<_> = audio.step_by(channels as usize).collect();
         self.samples = samples;
-        let res = spectrogram::analyze_mt::<u8>(&self.samples, 1500usize, 15).unwrap();
+        let res = spectrogram::forward::analyze_mt::<u8>(&self.samples, 1500usize, 15).unwrap();
         println!("Spectrogram made");
-        let view_bytes = res.create_intensity_bytes();
-        let reverse = inverse_mt(&res, 1500usize, 15);
+        let view_bytes = res.create_intensity_bytes(-3f32, 10f32);
+        let view_phase_bytes = res.create_phase_bytes();
+        let reverse = spectrogram::inverse::inverse_st(&res, 1500usize);
         let mut aud = SamplesBuffer::new(1, sr, reverse);
         rodio::output_to_wav(&mut aud, "results/mywav.wav").unwrap();
 
         let img_buffer =
             ImageBuffer::from_vec(res.width as u32, res.height as u32, view_bytes).unwrap();
         img_buffer.save("results/dest.png").unwrap();
+        ImageBuffer::<Luma<u8>, Vec<u8>>::from_vec(
+            res.width as u32,
+            res.height as u32,
+            view_phase_bytes,
+        )
+        .unwrap()
+        .save("results/phase.png")
+        .unwrap();
         img_buffer
     }
 }

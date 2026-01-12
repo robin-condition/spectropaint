@@ -3661,7 +3661,6 @@ dependencies = [
  "realfft",
  "rodio",
  "rustfft",
- "sync-ptr",
 ]
 
 [[package]]
@@ -3873,12 +3872,6 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
-
-[[package]]
-name = "sync-ptr"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29caca00a9f331827b856fc7615414d593f22c7b8b5e84839f773b1b3bee48f3"
 
 [[package]]
 name = "synstructure"
