@@ -10,7 +10,7 @@ egui-file-dialog = "0.12.0"
 egui_extras = { version = "0.33.3", features = ["all_loaders"] }
 image = "0.25.9"
 realfft = "3.5.0"
-rodio = "0.21.1"
+rodio = { version = "0.21.1", features = ["wav_output"] }
 rustfft = "6.4.1"
 spectrogram = { version = "0.1.0", path = "../spectrogram" }
 # rodio
