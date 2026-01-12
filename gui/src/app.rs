@@ -1,4 +1,4 @@
-use std::{error::Error, path::PathBuf, thread};
+use std::{error::Error, path::PathBuf, thread, time::Duration};
 
 use eframe::{App, CreationContext};
 use egui::{TextureHandle, TextureOptions, Vec2, load::SizedTexture};
@@ -32,16 +32,21 @@ impl SpectrogramApp {
 
     fn read_file(&mut self, path: PathBuf) -> ImageBuffer<Luma<u8>, Vec<u8>> {
         let fs = std::fs::File::open(path).unwrap();
-        let mut audio = rodio::Decoder::try_from(fs).unwrap();
+        //let mut audio = rodio::Decoder::try_from(fs).unwrap();
+        let mut audio = rodio::source::SineWave::new(100f32).take_duration(Duration::new(100, 0));
         let channels = audio.channels();
         let sr = audio.sample_rate();
         println!("{}", channels);
         let samples: Vec<_> = audio.step_by(channels as usize).collect();
         self.samples = samples;
-        let res = spectrogram::forward::analyze_mt::<u8>(&self.samples, 1500usize, 15).unwrap();
+        let mut res = spectrogram::forward::analyze_mt::<u8>(&self.samples, 1500usize, 15).unwrap();
         println!("Spectrogram made");
         let view_bytes = res.create_intensity_bytes(-3f32, 10f32);
         let view_phase_bytes = res.create_phase_bytes();
+
+        // Nuke phase
+        res.eliminate_phase();
+        res.apply_random_phases();
         let reverse = spectrogram::inverse::inverse_st(&res, 1500usize);
         let mut aud = SamplesBuffer::new(1, sr, reverse);
         rodio::output_to_wav(&mut aud, "results/mywav.wav").unwrap();

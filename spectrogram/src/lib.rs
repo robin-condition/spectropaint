@@ -51,11 +51,45 @@ impl SpectrogramImage {
         &mut self.data[y * self.width + x]
     }
 
+    pub fn phaseless_from_intensity_bytes(&mut self, min_val: f32, max_val: f32, buffer: &[u8]) {
+        let range = max_val - min_val;
+        for x in 0..self.width {
+            for y in 0..self.height {
+                let byte_val = buffer[(self.height - 1 - y) * self.width + x];
+                let as_float = if byte_val == 0 {
+                    f32::NEG_INFINITY
+                } else {
+                    byte_val.to_frac()
+                };
+                let un_normalized = as_float * range + min_val;
+                let un_log = un_normalized.exp();
+                let intensity = un_log;
+                *self.mut_get_at(x, y) = Complex::from(intensity);
+            }
+        }
+    }
+
+    pub fn apply_random_phases(&mut self) {
+        for x in 0..self.width {
+            for y in 0..self.height {
+                *self.mut_get_at(x, y) *= (Complex::i() * rand::random_range(0f32..TAU)).exp();
+            }
+        }
+    }
+
     pub fn to_phase_bytes(&self, buffer: &mut [u8]) {
         for x in 0..self.width {
             for y in 0..self.height {
                 buffer[(self.height - 1 - y) * self.width + x] =
                     u8::as_frac(self.get_at(x, y).arg() / TAU + 0.5f32);
+            }
+        }
+    }
+
+    pub fn eliminate_phase(&mut self) {
+        for x in 0..self.width {
+            for y in 0..self.height {
+                *self.mut_get_at(x, y) = self.get_at(x, y).norm().into();
             }
         }
     }
@@ -110,7 +144,3 @@ impl SpectrogramImage {
 pub mod forward;
 
 pub mod inverse;
-
-pub struct SpectrogramResult {}
-
-pub struct SpectrogramResultFrame {}

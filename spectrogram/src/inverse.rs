@@ -1,12 +1,18 @@
 use std::sync::Arc;
 
 use realfft::ComplexToReal;
-use rustfft::num_complex::Complex32;
+use rustfft::num_complex::{Complex, Complex32};
 
 use crate::SpectrogramImage;
 
 fn undo_to_real_no_changes(fft: &Arc<dyn ComplexToReal<f32>>, query: &mut [Complex32]) -> Vec<f32> {
     let mut outputs = fft.make_output_vec();
+    /*
+    if query[0].im != 0f32 || query[query.len() - 1].im != 0f32 {
+        query[0] = Complex::ZERO;
+        query[query.len() - 1] = Complex::ZERO;
+    }
+    */
     fft.process(query, &mut outputs).unwrap();
     outputs
 }
