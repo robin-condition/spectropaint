@@ -1,5 +1,6 @@
 use std::{
     f32::consts::{PI, TAU},
+    os::linux::raw::stat,
     sync::Arc,
     thread,
 };
@@ -42,7 +43,7 @@ impl UThing for u16 {
     }
 }
 
-pub fn analyze_mt<T: UThing + Primitive>(
+pub fn unsafe_analyze_mt<T: UThing + Primitive>(
     query: &Vec<f32>,
     window_size: usize,
     thread_ct: usize,
@@ -125,6 +126,117 @@ pub fn analyze_mt<T: UThing + Primitive>(
     for thr in thread_handles {
         thr.join().unwrap();
     }
+    println!("Threads done.");
+
+    // Automatically determining maximum (log) amplitude.
+    let maxd = results.iter().max_by(|a, b| a.total_cmp(b)).unwrap();
+    // Manually setting the lower clipping point.
+    let mind = -3f32;
+    // Automatic is a no-go because of -inf
+    let range = maxd - mind;
+    let subpx: Vec<T> = results
+        .iter()
+        .map(|s| T::as_frac((s - mind) / range))
+        .collect();
+
+    println!("Normalization done.");
+
+    image::ImageBuffer::from_vec(end_width as u32, end_height as u32, subpx)
+}
+
+pub fn analyze_mt<T: UThing + Primitive>(
+    query: &Vec<f32>,
+    window_size: usize,
+    thread_ct: usize,
+) -> Option<ImageBuffer<Luma<T>, Vec<T>>> {
+    if window_size % 2 == 1 {
+        panic!()
+    }
+
+    let hop_size = window_size / 2;
+
+    let not_fit_in_window = query.len() % window_size;
+    let to_pad_by = window_size + window_size - not_fit_in_window;
+    let to_pad_by_on_left = to_pad_by / 2;
+    let to_pad_by_on_right = to_pad_by - to_pad_by_on_left;
+
+    let padded: Vec<f32> = std::iter::repeat_n(0f32, to_pad_by_on_left)
+        .chain(query.iter().cloned())
+        .chain(std::iter::repeat_n(0f32, to_pad_by_on_right))
+        .collect();
+
+    let padded_ref = Arc::new(padded);
+
+    let new_total_len = padded_ref.len();
+
+    let mut my_fft = rustfft::FftPlanner::new();
+    let fft = my_fft.plan_fft_forward(window_size);
+
+    let seg_count = new_total_len / hop_size - 1;
+
+    let threadless_segs = seg_count % thread_ct;
+    let segs_per_thread_usually = seg_count / thread_ct;
+
+    let end_width = seg_count;
+    // Real-valued functions have symmetric spectra
+    let end_height = window_size / 2;
+    let mut results = Vec::new();
+    results.resize(end_width * end_height, 0f32);
+
+    let (sender, recvr) = std::sync::mpsc::channel();
+    let static_sender = Arc::new(sender);
+
+    let mut thread_handles = vec![];
+
+    println!("Starting threads");
+
+    let mut global_segment_start = 0usize;
+    for thread_id in 0..thread_ct {
+        let this_threads_seg_count = if thread_id == 0 {
+            segs_per_thread_usually + threadless_segs
+        } else {
+            segs_per_thread_usually
+        };
+        let cloned_fft = fft.clone();
+        let pref_clone = padded_ref.clone();
+        let cloned_arc = static_sender.clone();
+        thread_handles.push(thread::spawn(move || {
+            let mut segment_start = global_segment_start * hop_size;
+            for i in 0..this_threads_seg_count {
+                let seg = &pref_clone[segment_start..(segment_start + window_size)];
+
+                let analyzed = analyze_with_hann_window(&cloned_fft, seg);
+                let mags: Vec<f32> = analyzed.iter().map(|f| (f.norm() * 4f32).ln()).collect();
+
+                let x = i + global_segment_start;
+                cloned_arc.send((x, mags)).unwrap();
+
+                segment_start += hop_size;
+            }
+            drop(cloned_arc);
+        }));
+        global_segment_start += this_threads_seg_count;
+    }
+
+    drop(static_sender);
+
+    let my_extra_last_thread = thread::spawn(move || {
+        while let Ok(symb) = recvr.recv() {
+            for ind in 0..end_height {
+                let x = symb.0;
+                let y = end_height - ind - 1;
+                results[y * end_width + x] = symb.1[ind];
+            }
+        }
+        results
+    });
+
+    println!("Threads made");
+
+    for thr in thread_handles {
+        thr.join().unwrap();
+    }
+    results = my_extra_last_thread.join().unwrap();
     println!("Threads done.");
 
     // Automatically determining maximum (log) amplitude.

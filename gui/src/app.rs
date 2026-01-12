@@ -30,13 +30,14 @@ impl SpectrogramApp {
         }
     }
 
-    fn read_file(&self, path: PathBuf) -> ImageBuffer<Luma<u8>, Vec<u8>> {
+    fn read_file(&mut self, path: PathBuf) -> ImageBuffer<Luma<u8>, Vec<u8>> {
         let fs = std::fs::File::open(path).unwrap();
         let mut audio = rodio::Decoder::try_from(fs).unwrap();
         let channels = audio.channels();
         println!("{}", channels);
         let samples: Vec<_> = audio.step_by(channels as usize).collect();
-        let res = spectrogram::analyze_st::<u8>(&samples, 1500usize).unwrap();
+        self.samples = samples;
+        let res = spectrogram::analyze_mt::<u8>(&self.samples, 1500usize, 15).unwrap();
         res.save("dest.png").unwrap();
         res
     }
