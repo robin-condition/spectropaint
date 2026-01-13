@@ -77,6 +77,25 @@ impl SpectrogramImage {
         }
     }
 
+    pub fn apply_sinusoidal_phases(&mut self, assume_window_size: usize) {
+        let hop_size = assume_window_size / 2;
+
+        for x in 0..self.width {
+            for y in 0..self.height {
+                let samples_before_this = x * hop_size;
+                let actual_y = y; //self.height as i32 / 2 - y as i32 / 2 - 1;
+                //let this_frequency = actual_y as f32 / self.height as f32 * TAU;
+
+                let offset = if y < 13 || y == 14 { PI } else { 0f32 };
+
+                let this_frequency = 440f32 * TAU / 48000f32;
+                *self.mut_get_at(x, y) *= (Complex::i()
+                    * (this_frequency * samples_before_this as f32 + offset) as f32)
+                    .exp();
+            }
+        }
+    }
+
     pub fn to_phase_bytes(&self, buffer: &mut [u8]) {
         for x in 0..self.width {
             for y in 0..self.height {

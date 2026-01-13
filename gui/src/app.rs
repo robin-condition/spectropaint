@@ -32,8 +32,8 @@ impl SpectrogramApp {
 
     fn read_file(&mut self, path: PathBuf) -> ImageBuffer<Luma<u8>, Vec<u8>> {
         let fs = std::fs::File::open(path).unwrap();
-        let mut audio = rodio::Decoder::try_from(fs).unwrap();
-        //let mut audio = rodio::source::SineWave::new(100f32).take_duration(Duration::new(100, 0));
+        //let mut audio = rodio::Decoder::try_from(fs).unwrap();
+        let mut audio = rodio::source::SineWave::new(440f32).take_duration(Duration::new(100, 0));
         let channels = audio.channels();
         let sr = audio.sample_rate();
         println!("{}", channels);
@@ -44,13 +44,19 @@ impl SpectrogramApp {
         let view_bytes = res.create_intensity_bytes(-3f32, 10f32);
         let view_phase_bytes = res.create_phase_bytes();
 
+        let sane_reverse = spectrogram::inverse::inverse_st(&res, 1500usize);
+
         // Nuke phase
-        //res.eliminate_phase();
+        res.eliminate_phase();
         //res.apply_random_phases();
+        res.apply_sinusoidal_phases(1500usize);
 
         let reverse = spectrogram::inverse::inverse_st(&res, 1500usize);
         let mut aud = SamplesBuffer::new(1, sr, reverse);
         rodio::output_to_wav(&mut aud, "results/mywav.wav").unwrap();
+
+        let mut orig = SamplesBuffer::new(1, sr, sane_reverse);
+        rodio::output_to_wav(&mut orig, "results/original_reconstructed.wav").unwrap();
 
         let img_buffer =
             ImageBuffer::from_vec(res.width as u32, res.height as u32, view_bytes).unwrap();
@@ -62,6 +68,16 @@ impl SpectrogramApp {
         )
         .unwrap()
         .save("results/phase.png")
+        .unwrap();
+
+        let view_screwed_up_phase_bytes = res.create_phase_bytes();
+        ImageBuffer::<Luma<u8>, Vec<u8>>::from_vec(
+            res.width as u32,
+            res.height as u32,
+            view_screwed_up_phase_bytes,
+        )
+        .unwrap()
+        .save("results/bungled_phase.png")
         .unwrap();
         img_buffer
     }
