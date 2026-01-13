@@ -84,14 +84,20 @@ impl SpectrogramImage {
             for y in 0..self.height {
                 let samples_before_this = x * hop_size;
                 let actual_y = y; //self.height as i32 / 2 - y as i32 / 2 - 1;
-                //let this_frequency = actual_y as f32 / self.height as f32 * TAU;
+                // The 2 * pi and self.height * 2 cancel a 2. Though maybe it should be /assume_window_size * TAU with not quite cancellation. idk.
+                //let this_frequency = actual_y as f32 / self.height as f32 * PI;
+                //let this_frequency = actual_y as f32 / assume_window_size as f32 * TAU;
+                //let offset = 0f32;
 
-                let offset = if y < 13 || y == 14 { PI } else { 0f32 };
+                let offset = if y < 27 || y == 28 { PI } else { 0f32 };
 
                 let this_frequency = 440f32 * TAU / 48000f32;
-                *self.mut_get_at(x, y) *= (Complex::i()
-                    * (this_frequency * samples_before_this as f32 + offset) as f32)
-                    .exp();
+
+                //let this_frequency = y * PI * x;
+                *self.mut_get_at(x, y) *= (Complex::i() *
+                //(this_frequency * samples_before_this as f32 + offset) as f32)
+                ((27.5f32) * x as f32 * PI + if y % 2 == 0 { 0f32 } else {PI}))
+                .exp();
             }
         }
     }
