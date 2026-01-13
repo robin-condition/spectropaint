@@ -42,6 +42,12 @@ pub struct SpectrogramImage {
     pub data: Vec<Complex32>,
 }
 
+#[derive(Clone, Copy)]
+pub struct SpectrogramSettings {
+    pub window_size: usize,
+    pub window_pad_amnt: usize,
+}
+
 impl SpectrogramImage {
     pub fn get_at(&self, x: usize, y: usize) -> Complex32 {
         self.data[y * self.width + x]
@@ -93,12 +99,34 @@ impl SpectrogramImage {
 
                 let this_frequency = 440f32 * TAU / 48000f32;
 
+                let this_frequency_hz = y as f32 / assume_window_size as f32 * 48000f32;
+
+                let radians_per_sec = this_frequency_hz * TAU;
+                let sec_per_hop = hop_size as f32 / 48000f32;
+
+                let radians_per_hop = sec_per_hop * radians_per_sec;
+
+                let radians_per_hop = -TAU / 4f32; // 600 HZ
+
+                let radians_per_hop = 0f32; // 2400 HZ
+
+                // Guess:
+                let radians_per_hop = -TAU * this_frequency_hz / 2400f32;
+                let radians_per_hop = 0.75f32 * TAU * this_frequency_hz / 2400f32;
+
+                // Guess #2:
+                let samples_per_cycle = 48000f32 / this_frequency_hz;
+                let leftover_samples = hop_size as f32 % samples_per_cycle;
+                let leftover_cycles = leftover_samples / samples_per_cycle;
+                //let radians_per_hop = leftover_cycles * TAU;
+
                 //let this_frequency = y * PI * x;
                 *self.mut_get_at(x, y) *= (Complex::i() *
                     //(this_frequency * samples_before_this as f32 + offset) as f32)
                     //((y as f32) * x as f32 * PI + if y % 2 == 0 { 0f32 } else {PI}))
-                    if (x+y) % 2 == 0 {0f32} else {PI})
-                .exp();
+                    //if (x) % 2 == 0 {0f32} else {PI})
+            radians_per_hop * x as f32)
+                    .exp();
             }
         }
     }

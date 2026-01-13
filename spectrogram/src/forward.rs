@@ -7,7 +7,7 @@ use rustfft::{
     num_complex::{Complex, Complex32},
 };
 
-use crate::{SpectrogramImage, UThing};
+use crate::{SpectrogramImage, SpectrogramSettings, UThing};
 
 // https://en.wikipedia.org/wiki/Hann_function
 fn hann(n: usize, recip_len: f32) -> f32 {
@@ -28,6 +28,7 @@ fn analyze_with_hann_window(fft: &Arc<dyn Fft<f32>>, query: &[f32]) -> Vec<Compl
 fn analyze_shifted_real_with_hann_window(
     fft: &Arc<dyn RealToComplex<f32>>,
     query: &[f32],
+    pad_by: usize,
 ) -> Vec<Complex32> {
     let recip_len = ((query.len() - 1) as f32).recip();
     let mut inputs: Vec<f32> = query
@@ -35,6 +36,7 @@ fn analyze_shifted_real_with_hann_window(
         .enumerate()
         .map(|(i, f)| f * hann(i, recip_len))
         .collect();
+    inputs.resize(query.len() + pad_by, 0f32);
     inputs.rotate_left(query.len() / 2);
     let mut outputs = fft.make_output_vec();
     fft.process(&mut inputs, &mut outputs).unwrap();
@@ -43,12 +45,15 @@ fn analyze_shifted_real_with_hann_window(
 
 pub fn analyze_mt<T: UThing + Primitive>(
     query: &Vec<f32>,
-    window_size: usize,
+    settings: &SpectrogramSettings,
     thread_ct: usize,
 ) -> Option<SpectrogramImage> {
+    let window_size = settings.window_size;
     if window_size % 2 == 1 {
         panic!()
     }
+
+    let pad_amnt = settings.window_pad_amnt;
 
     let hop_size = window_size / 2;
 
@@ -56,8 +61,6 @@ pub fn analyze_mt<T: UThing + Primitive>(
     let to_pad_by = window_size + window_size - not_fit_in_window;
     let to_pad_by_on_left = to_pad_by / 2;
     let to_pad_by_on_right = to_pad_by - to_pad_by_on_left;
-
-    let spectrum_size = window_size / 2 + 1;
 
     let padded: Vec<f32> = std::iter::repeat_n(0f32, to_pad_by_on_left)
         .chain(query.iter().cloned())
@@ -69,7 +72,9 @@ pub fn analyze_mt<T: UThing + Primitive>(
     let new_total_len = padded_ref.len();
 
     let mut my_fft = realfft::RealFftPlanner::new();
-    let fft = my_fft.plan_fft_forward(window_size);
+    let fft = my_fft.plan_fft_forward(window_size + pad_amnt);
+
+    let spectrum_size = fft.complex_len();
 
     let seg_count = new_total_len / hop_size - 1;
 
@@ -104,7 +109,7 @@ pub fn analyze_mt<T: UThing + Primitive>(
             for i in 0..this_threads_seg_count {
                 let seg = &pref_clone[segment_start..(segment_start + window_size)];
 
-                let analyzed = analyze_shifted_real_with_hann_window(&cloned_fft, seg);
+                let analyzed = analyze_shifted_real_with_hann_window(&cloned_fft, seg, pad_amnt);
                 assert_eq!(analyzed.len(), spectrum_size);
                 let mags: Vec<_> = analyzed.into_iter().map(|f| f * 2f32).collect();
 
