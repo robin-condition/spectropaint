@@ -34,8 +34,8 @@ impl SpectrogramApp {
         let fs = std::fs::File::open(path).unwrap();
 
         let window_size = 3000;
-        //let mut audio = rodio::Decoder::try_from(fs).unwrap();
-        let mut audio = rodio::source::SineWave::new(440f32).take_duration(Duration::new(100, 0));
+        let mut audio = rodio::Decoder::try_from(fs).unwrap();
+        //let mut audio = rodio::source::SineWave::new(1230f32).take_duration(Duration::new(100, 0));
         let channels = audio.channels();
         let sr = audio.sample_rate();
         println!("{}", channels);

@@ -14,6 +14,8 @@ fn undo_to_real_no_changes(fft: &Arc<dyn ComplexToReal<f32>>, query: &mut [Compl
     }
 
     fft.process(query, &mut outputs).unwrap();
+    let halflen = outputs.len() / 2;
+    outputs.rotate_right(halflen);
     outputs
 }
 

@@ -95,8 +95,9 @@ impl SpectrogramImage {
 
                 //let this_frequency = y * PI * x;
                 *self.mut_get_at(x, y) *= (Complex::i() *
-                //(this_frequency * samples_before_this as f32 + offset) as f32)
-                ((27.5f32) * x as f32 * PI + if y % 2 == 0 { 0f32 } else {PI}))
+                    //(this_frequency * samples_before_this as f32 + offset) as f32)
+                    //((y as f32) * x as f32 * PI + if y % 2 == 0 { 0f32 } else {PI}))
+                    if (x+y) % 2 == 0 {0f32} else {PI})
                 .exp();
             }
         }

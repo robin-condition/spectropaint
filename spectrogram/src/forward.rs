@@ -25,7 +25,7 @@ fn analyze_with_hann_window(fft: &Arc<dyn Fft<f32>>, query: &[f32]) -> Vec<Compl
     inputs
 }
 
-fn analyze_real_with_hann_window(
+fn analyze_shifted_real_with_hann_window(
     fft: &Arc<dyn RealToComplex<f32>>,
     query: &[f32],
 ) -> Vec<Complex32> {
@@ -35,6 +35,7 @@ fn analyze_real_with_hann_window(
         .enumerate()
         .map(|(i, f)| f * hann(i, recip_len))
         .collect();
+    inputs.rotate_left(query.len() / 2);
     let mut outputs = fft.make_output_vec();
     fft.process(&mut inputs, &mut outputs).unwrap();
     outputs
@@ -103,7 +104,7 @@ pub fn analyze_mt<T: UThing + Primitive>(
             for i in 0..this_threads_seg_count {
                 let seg = &pref_clone[segment_start..(segment_start + window_size)];
 
-                let analyzed = analyze_real_with_hann_window(&cloned_fft, seg);
+                let analyzed = analyze_shifted_real_with_hann_window(&cloned_fft, seg);
                 assert_eq!(analyzed.len(), spectrum_size);
                 let mags: Vec<_> = analyzed.into_iter().map(|f| f * 2f32).collect();
 
