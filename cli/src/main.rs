@@ -109,19 +109,19 @@ fn main() {
 
     let mut res = spectrogram::forward::analyze_mt(&samples, &settings, 15).unwrap();
 
-    let sane_reverse = spectrogram::inverse::inverse_mt(&res, &settings, 15, false);
+    let sane_reverse = spectrogram::inverse::inverse_mt(&res, &settings, 2, false);
 
     let mut orig = SamplesBuffer::new(1, sr, sane_reverse);
     rodio::output_to_wav(&mut orig, "results/original_reconstructed.wav").unwrap();
 
     println!("Spectrogram made");
     let view_bytes = res.create_intensity_bytes(-3f32, 10f32);
-    let view_phase_bytes = res.create_phase_bytes();
+    let view_phase_bytes = res.create_relative_phase_bytes();
 
     let masked_phase_bytes = {
         let mut bytes = view_phase_bytes.clone();
         for ind in 0..bytes.len() {
-            if view_bytes[ind] < 100u8 {
+            if view_bytes[ind] < 120u8 {
                 bytes[ind] = 0;
             }
         }
@@ -133,7 +133,7 @@ fn main() {
     // Nuke phase
     res.eliminate_phase();
     //res.apply_random_phases();
-    res.apply_sinusoidal_phases(settings.window_size);
+    //res.apply_sinusoidal_phases(settings.window_size);
 
     let reverse = spectrogram::inverse::inverse_mt(&res, &settings, 15, true);
     let mut aud = SamplesBuffer::new(1, sr, reverse);
