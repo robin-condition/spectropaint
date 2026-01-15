@@ -43,7 +43,7 @@ fn analyze_shifted_real_with_hann_window(
     outputs
 }
 
-pub fn analyze_mt<T: UThing + Primitive>(
+pub fn analyze_mt(
     query: &Vec<f32>,
     settings: &SpectrogramSettings,
     thread_ct: usize,
@@ -92,7 +92,7 @@ pub fn analyze_mt<T: UThing + Primitive>(
 
     let mut thread_handles = vec![];
 
-    println!("Starting threads");
+    //println!("Starting threads");
 
     let mut global_segment_start = 0usize;
     for thread_id in 0..thread_ct {
@@ -132,13 +132,13 @@ pub fn analyze_mt<T: UThing + Primitive>(
         spectrogram
     });
 
-    println!("Threads made");
+    //println!("Threads made");
 
     for thr in thread_handles {
         thr.join().unwrap();
     }
     spectrogram = my_extra_last_thread.join().unwrap();
-    println!("Threads done.");
+    //println!("Threads done.");
 
     Some(spectrogram)
 }

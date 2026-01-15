@@ -5,6 +5,8 @@ use rustfft::num_complex::{Complex, Complex32};
 
 use crate::{SpectrogramImage, SpectrogramSettings};
 
+use std::sync::mpsc;
+
 fn undo_to_real_no_changes(
     fft: &Arc<dyn ComplexToReal<f32>>,
     query: &mut [Complex32],
@@ -25,9 +27,10 @@ fn undo_to_real_no_changes(
     outputs
 }
 
-pub fn inverse_st(
+pub fn inverse_mt(
     spectrogram: &SpectrogramImage,
     settings: &SpectrogramSettings,
+    thread_ct: usize,
     awful_hack: bool,
 ) -> Vec<f32> {
     let window_size = settings.window_size;
@@ -52,23 +55,57 @@ pub fn inverse_st(
     let mut output_samples = Vec::new();
     output_samples.resize(total_sample_count, 0f32);
 
-    let mut sample_start_ind = 0;
-
     println!("Beginning ifft");
 
-    let mut spectrum = ifft.make_input_vec();
+    let threadless_segs = spectrogram.width % thread_ct;
+    let segs_per_thread_usually = spectrogram.width / thread_ct;
 
-    for x in 0..spectrogram.width {
-        spectrogram.get_column(x, &mut spectrum);
+    let (sender, recvr) = std::sync::mpsc::channel();
+    let static_sender = Arc::new(sender);
 
-        let processed = undo_to_real_no_changes(&ifft, &mut spectrum, pad_amnt, awful_hack);
-        assert_eq!(processed.len(), window_size);
-        for i in 0..processed.len() {
-            output_samples[i + sample_start_ind] += processed[i];
+    std::thread::scope(|scop| {
+        let mut threads = vec![];
+        let mut starting_segment = 0;
+
+        for t_id in 0..thread_ct {
+            let segments_for_this_thread =
+                segs_per_thread_usually + if t_id == 0 { threadless_segs } else { 0 };
+
+            let starting_segment_for_this = starting_segment;
+
+            let sender_arc = static_sender.clone();
+
+            let spec_ref = &spectrogram;
+            let cloned_fft = ifft.clone();
+
+            threads.push(scop.spawn(move || {
+                let mut sample_start_ind = starting_segment_for_this * hop_size;
+                let mut spectrum = cloned_fft.make_input_vec();
+                for seg_ind in 0..segments_for_this_thread {
+                    let x = seg_ind + starting_segment_for_this;
+                    spectrogram.get_column(x, &mut spectrum);
+
+                    let processed =
+                        undo_to_real_no_changes(&cloned_fft, &mut spectrum, pad_amnt, awful_hack);
+                    assert_eq!(processed.len(), window_size);
+                    sender_arc.send((sample_start_ind, processed)).unwrap();
+
+                    sample_start_ind += hop_size;
+                }
+            }));
+
+            starting_segment += segments_for_this_thread;
+        }
+        drop(static_sender);
+
+        while let Ok((ind, proc)) = recvr.recv() {
+            for i in 0..proc.len() {
+                output_samples[i + ind] += proc[i];
+            }
         }
 
-        sample_start_ind += hop_size;
-    }
+        drop(threads);
+    });
 
     println!("Ifft done");
 
