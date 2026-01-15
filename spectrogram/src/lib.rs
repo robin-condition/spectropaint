@@ -78,6 +78,36 @@ impl SpectrogramImage {
         }
     }
 
+    pub fn apply_intensity_bytes(&mut self, min_val: f32, max_val: f32, buffer: &[u8]) {
+        let range = max_val - min_val;
+        for x in 0..self.width {
+            for y in 0..self.height {
+                let byte_val = buffer[(self.height - 1 - y) * self.width + x];
+                let as_float = if byte_val == 0 {
+                    f32::NEG_INFINITY
+                } else {
+                    byte_val.to_frac()
+                };
+                let un_normalized = as_float * range + min_val;
+                let un_log = un_normalized.exp();
+                let intensity = un_log;
+                *self.mut_get_at(x, y) *= intensity;
+            }
+        }
+    }
+
+    pub fn normalize_magnitudes_no_nans(&mut self) {
+        for c in &mut self.data {
+            *c = Complex::from_polar(1f32, c.arg());
+        }
+    }
+
+    pub fn normalize_magnitudes_with_norm(&mut self) {
+        for c in &mut self.data {
+            *c /= c.norm();
+        }
+    }
+
     pub fn apply_phase_bytes(&mut self, lower_seam: f32, buffer: &[u8], relative: bool) {
         for y in 0..self.height {
             let mut phased = Complex::from(1f32);
