@@ -78,6 +78,24 @@ impl SpectrogramImage {
         }
     }
 
+    pub fn apply_phase_bytes(&mut self, lower_seam: f32, buffer: &[u8], relative: bool) {
+        for y in 0..self.height {
+            let mut phased = Complex::from(1f32);
+            for x in 0..self.width {
+                let curr_byte = buffer[y * self.width];
+                let phase = curr_byte.to_frac() * TAU + lower_seam;
+                let curr_phase = (Complex::i() * phase).exp();
+                if relative {
+                    phased *= curr_phase;
+                } else {
+                    phased = curr_phase;
+                }
+
+                *self.mut_get_at(x, y) *= phased;
+            }
+        }
+    }
+
     pub fn apply_random_phases(&mut self) {
         for x in 0..self.width {
             for y in 0..self.height {
@@ -135,25 +153,33 @@ impl SpectrogramImage {
         }
     }
 
-    pub fn to_absolute_phase_bytes(&self, buffer: &mut [u8]) {
+    fn arg_seamed_at(complex: Complex32, lower_seam: f32) -> f32 {
+        let raw_arg = complex.arg();
+        let arg_0_tau = (raw_arg + TAU) % TAU;
+        let arg_0_tau_shifted = ((arg_0_tau - lower_seam) + TAU) % TAU;
+        arg_0_tau_shifted
+    }
+
+    pub fn to_absolute_phase_bytes(&self, buffer: &mut [u8], lower_seam: f32) {
         for x in 0..self.width {
             for y in 0..self.height {
                 buffer[(self.height - 1 - y) * self.width + x] =
-                    u8::as_frac(self.get_at(x, y).arg() / TAU + 0.5f32);
+                    u8::as_frac(Self::arg_seamed_at(self.get_at(x, y), lower_seam) / TAU);
             }
         }
     }
 
-    pub fn to_relative_phase_bytes(&self, buffer: &mut [u8]) {
+    pub fn to_relative_phase_bytes(&self, buffer: &mut [u8], lower_seam: f32) {
         for x in 0..self.width {
             for y in 0..self.height {
                 if x > 0 {
                     buffer[(self.height - 1 - y) * self.width + x] = u8::as_frac(
-                        (self.get_at(x, y) / self.get_at(x - 1, y)).arg() / TAU + 0.5f32,
+                        Self::arg_seamed_at(self.get_at(x, y) / self.get_at(x - 1, y), lower_seam)
+                            / TAU,
                     );
                 } else {
                     buffer[(self.height - 1 - y) * self.width + x] =
-                        u8::as_frac(self.get_at(x, y).arg() / TAU + 0.5f32);
+                        u8::as_frac(Self::arg_seamed_at(self.get_at(x, y), lower_seam));
                 }
             }
         }
@@ -184,17 +210,17 @@ impl SpectrogramImage {
         myvec
     }
 
-    pub fn create_phase_bytes(&self) -> Vec<u8> {
+    pub fn create_phase_bytes(&self, lower_seam: f32) -> Vec<u8> {
         let mut myvec = Vec::new();
         myvec.resize(self.width * self.height, 0);
-        self.to_absolute_phase_bytes(&mut myvec);
+        self.to_absolute_phase_bytes(&mut myvec, lower_seam);
         myvec
     }
 
-    pub fn create_relative_phase_bytes(&self) -> Vec<u8> {
+    pub fn create_relative_phase_bytes(&self, lower_seam: f32) -> Vec<u8> {
         let mut myvec = Vec::new();
         myvec.resize(self.width * self.height, 0);
-        self.to_relative_phase_bytes(&mut myvec);
+        self.to_relative_phase_bytes(&mut myvec, lower_seam);
         myvec
     }
 
