@@ -117,7 +117,7 @@ impl MyEditor {
             }
         }
 
-        if resp.contains_pointer() {
+        if resp.contains_pointer() && ui.input(|inp| inp.modifiers.ctrl) {
             let scrolled = ui.input(|inp| inp.raw_scroll_delta).y;
             if scrolled != 0f32 {
                 self.cursor_brightness *= (scrolled / 20f32).exp();
@@ -133,7 +133,7 @@ impl MyEditor {
             self.file_picker.pick_file();
         }
         egui::containers::ScrollArea::both()
-            .scroll_source(ScrollSource::SCROLL_BAR)
+            .scroll_source(ScrollSource::SCROLL_BAR | ScrollSource::MOUSE_WHEEL)
             .show(ui, |ui| {
                 if self.sized_tx.is_none() {
                     self.sized_tx = Some(SizedTexture::new(
