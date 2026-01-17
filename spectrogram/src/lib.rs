@@ -48,7 +48,78 @@ pub struct SpectrogramSettings {
     pub window_pad_amnt: usize,
 }
 
+#[derive(Clone, Copy)]
+pub struct SpectrogramIntensityPlotSettings {
+    pub bin_range: [usize; 2],
+    pub intensity_range: [f32; 2],
+}
+
+#[derive(Clone, Copy)]
+pub struct SpectrogramPhasePlotSettings {
+    pub bin_range: [usize; 2],
+    pub lower_seam: f32,
+}
+
+trait PhaselessAmplitudeApplier {
+    fn apply_intensity(img: &mut SpectrogramImage, x: usize, y: usize, intensity: f32);
+}
+
+struct OverrideAmplitudeApplier;
+impl PhaselessAmplitudeApplier for OverrideAmplitudeApplier {
+    fn apply_intensity(img: &mut SpectrogramImage, x: usize, y: usize, intensity: f32) {
+        *img.mut_get_at(x, y) = Complex::from(intensity);
+    }
+}
+
+struct MultiplyByAmplitudeApplier;
+impl PhaselessAmplitudeApplier for MultiplyByAmplitudeApplier {
+    fn apply_intensity(img: &mut SpectrogramImage, x: usize, y: usize, intensity: f32) {
+        *img.mut_get_at(x, y) *= intensity;
+    }
+}
+
+trait ZeroingBehavior {
+    fn zero_outside_range(
+        img: &mut SpectrogramImage,
+        x: usize,
+        first_bin: usize,
+        last_bin_plus_one: usize,
+    );
+}
+
+struct ZeroOutsideRange;
+impl ZeroingBehavior for ZeroOutsideRange {
+    fn zero_outside_range(
+        img: &mut SpectrogramImage,
+        x: usize,
+        first_bin: usize,
+        last_bin_plus_one: usize,
+    ) {
+        for y in 0..first_bin {
+            *img.mut_get_at(x, y) = Complex::ZERO;
+        }
+        for y in last_bin_plus_one..img.height {
+            *img.mut_get_at(x, y) = Complex::ZERO;
+        }
+    }
+}
+
+struct NoZeroing;
+impl ZeroingBehavior for NoZeroing {
+    fn zero_outside_range(
+        img: &mut SpectrogramImage,
+        x: usize,
+        first_bin: usize,
+        last_bin_plus_one: usize,
+    ) {
+    }
+}
+
 impl SpectrogramImage {
+    pub fn compute_bin_number(window_size: usize, sample_rate: usize, frequency: f32) -> usize {
+        (frequency / sample_rate as f32 * window_size as f32) as usize
+    }
+
     pub fn get_at(&self, x: usize, y: usize) -> Complex32 {
         self.data[y * self.width + x]
     }
@@ -61,40 +132,56 @@ impl SpectrogramImage {
         &mut self.data[y * self.width + x]
     }
 
-    pub fn phaseless_from_intensity_bytes(&mut self, min_val: f32, max_val: f32, buffer: &[u8]) {
-        let range = max_val - min_val;
-        for x in 0..self.width {
-            for y in 0..self.height {
-                let byte_val = buffer[(self.height - 1 - y) * self.width + x];
-                let as_float = if byte_val == 0 {
-                    f32::NEG_INFINITY
-                } else {
-                    byte_val.to_frac()
-                };
-                let un_normalized = as_float * range + min_val;
-                let un_log = un_normalized.exp();
-                let intensity = un_log;
-                *self.mut_get_at(x, y) = Complex::from(intensity);
-            }
+    pub fn phaseless_from_intensity_bytes(
+        &mut self,
+        settings: &SpectrogramIntensityPlotSettings,
+        buffer: &[u8],
+        zero_outside: bool,
+    ) {
+        if zero_outside {
+            self.internal_apply_intensity_bytes::<OverrideAmplitudeApplier, ZeroOutsideRange>(
+                settings, buffer,
+            );
+        } else {
+            self.internal_apply_intensity_bytes::<OverrideAmplitudeApplier, NoZeroing>(
+                settings, buffer,
+            );
         }
     }
 
-    pub fn apply_intensity_bytes(&mut self, min_val: f32, max_val: f32, buffer: &[u8]) {
-        let range = max_val - min_val;
+    fn internal_apply_intensity_bytes<Appl: PhaselessAmplitudeApplier, Zeroing: ZeroingBehavior>(
+        &mut self,
+        settings: &SpectrogramIntensityPlotSettings,
+        buffer: &[u8],
+    ) {
+        let range = settings.intensity_range[1] - settings.intensity_range[0];
         for x in 0..self.width {
-            for y in 0..self.height {
-                let byte_val = buffer[(self.height - 1 - y) * self.width + x];
+            for y in settings.bin_range[0]..settings.bin_range[1] {
+                let buf_y = y - settings.bin_range[0];
+                let byte_val = buffer[(settings.bin_range[1] - 1 - buf_y) * self.width + x];
                 let as_float = if byte_val == 0 {
                     f32::NEG_INFINITY
                 } else {
                     byte_val.to_frac()
                 };
-                let un_normalized = as_float * range + min_val;
+                let un_normalized = as_float * range + settings.intensity_range[0];
                 let un_log = un_normalized.exp();
                 let intensity = un_log;
-                *self.mut_get_at(x, y) *= intensity;
+                Appl::apply_intensity(self, x, y, intensity);
             }
+
+            Zeroing::zero_outside_range(self, x, settings.bin_range[0], settings.bin_range[1]);
         }
+    }
+
+    pub fn apply_intensity_bytes(
+        &mut self,
+        settings: &SpectrogramIntensityPlotSettings,
+        buffer: &[u8],
+    ) {
+        self.internal_apply_intensity_bytes::<MultiplyByAmplitudeApplier, NoZeroing>(
+            settings, buffer,
+        );
     }
 
     pub fn normalize_magnitudes_no_nans(&mut self) {
@@ -191,26 +278,38 @@ impl SpectrogramImage {
         arg_0_tau_shifted
     }
 
-    pub fn to_absolute_phase_bytes(&self, buffer: &mut [u8], lower_seam: f32) {
+    pub fn to_absolute_phase_bytes(
+        &self,
+        settings: &SpectrogramPhasePlotSettings,
+        buffer: &mut [u8],
+    ) {
         for x in 0..self.width {
-            for y in 0..self.height {
-                buffer[(self.height - 1 - y) * self.width + x] =
-                    u8::as_frac(Self::arg_seamed_at(self.get_at(x, y), lower_seam) / TAU);
+            for y in settings.bin_range[0]..settings.bin_range[1] {
+                let buf_y = y - settings.bin_range[0];
+                buffer[(settings.bin_range[1] - 1 - buf_y) * self.width + x] =
+                    u8::as_frac(Self::arg_seamed_at(self.get_at(x, y), settings.lower_seam) / TAU);
             }
         }
     }
 
-    pub fn to_relative_phase_bytes(&self, buffer: &mut [u8], lower_seam: f32) {
+    pub fn to_relative_phase_bytes(
+        &self,
+        settings: &SpectrogramPhasePlotSettings,
+        buffer: &mut [u8],
+    ) {
         for x in 0..self.width {
-            for y in 0..self.height {
+            for y in settings.bin_range[0]..settings.bin_range[1] {
+                let buf_y = y - settings.bin_range[0];
                 if x > 0 {
-                    buffer[(self.height - 1 - y) * self.width + x] = u8::as_frac(
-                        Self::arg_seamed_at(self.get_at(x, y) / self.get_at(x - 1, y), lower_seam)
-                            / TAU,
+                    buffer[(settings.bin_range[1] - 1 - buf_y) * self.width + x] = u8::as_frac(
+                        Self::arg_seamed_at(
+                            self.get_at(x, y) / self.get_at(x - 1, y),
+                            settings.lower_seam,
+                        ) / TAU,
                     );
                 } else {
-                    buffer[(self.height - 1 - y) * self.width + x] =
-                        u8::as_frac(Self::arg_seamed_at(self.get_at(x, y), lower_seam));
+                    buffer[(settings.bin_range[1] - 1 - buf_y) * self.width + x] =
+                        u8::as_frac(Self::arg_seamed_at(self.get_at(x, y), settings.lower_seam));
                 }
             }
         }
@@ -224,34 +323,50 @@ impl SpectrogramImage {
         }
     }
 
-    pub fn to_intensity_bytes(&self, min_val: f32, max_val: f32, buffer: &mut [u8]) {
-        let range = max_val - min_val;
+    pub fn to_intensity_bytes(
+        &self,
+        settings: &SpectrogramIntensityPlotSettings,
+        buffer: &mut [u8],
+    ) {
+        let range = settings.intensity_range[1] - settings.intensity_range[0];
         for x in 0..self.width {
-            for y in 0..self.height {
-                buffer[(self.height - 1 - y) * self.width + x] =
-                    u8::as_frac((self.get_at(x, y).norm_sqr().ln() * 0.5f32 - min_val) / range);
+            for y in settings.bin_range[0]..settings.bin_range[1] {
+                let buf_y = y - settings.bin_range[0];
+                buffer[(settings.bin_range[1] - 1 - buf_y) * self.width + x] = u8::as_frac(
+                    (self.get_at(x, y).norm_sqr().ln() * 0.5f32 - settings.intensity_range[0])
+                        / range,
+                );
             }
         }
     }
 
-    pub fn create_intensity_bytes(&self, min: f32, max: f32) -> Vec<u8> {
+    pub fn create_intensity_bytes(&self, settings: &SpectrogramIntensityPlotSettings) -> Vec<u8> {
         let mut myvec = Vec::new();
-        myvec.resize(self.width * self.height, 0);
-        self.to_intensity_bytes(min, max, &mut myvec);
+        myvec.resize(
+            self.width * (settings.bin_range[1] - settings.bin_range[0]),
+            0,
+        );
+        self.to_intensity_bytes(settings, &mut myvec);
         myvec
     }
 
-    pub fn create_phase_bytes(&self, lower_seam: f32) -> Vec<u8> {
+    pub fn create_phase_bytes(&self, settings: &SpectrogramPhasePlotSettings) -> Vec<u8> {
         let mut myvec = Vec::new();
-        myvec.resize(self.width * self.height, 0);
-        self.to_absolute_phase_bytes(&mut myvec, lower_seam);
+        myvec.resize(
+            self.width * (settings.bin_range[1] - settings.bin_range[0]),
+            0,
+        );
+        self.to_absolute_phase_bytes(settings, &mut myvec);
         myvec
     }
 
-    pub fn create_relative_phase_bytes(&self, lower_seam: f32) -> Vec<u8> {
+    pub fn create_relative_phase_bytes(&self, settings: &SpectrogramPhasePlotSettings) -> Vec<u8> {
         let mut myvec = Vec::new();
-        myvec.resize(self.width * self.height, 0);
-        self.to_relative_phase_bytes(&mut myvec, lower_seam);
+        myvec.resize(
+            self.width * (settings.bin_range[1] - settings.bin_range[0]),
+            0,
+        );
+        self.to_relative_phase_bytes(settings, &mut myvec);
         myvec
     }
 

@@ -5,7 +5,9 @@ use egui::{TextureHandle, TextureOptions, Vec2, load::SizedTexture};
 use egui_file_dialog::FileDialog;
 use image::{EncodableLayout, ImageBuffer, Luma};
 use rodio::{OutputStream, Source, buffer::SamplesBuffer};
-use spectrogram::SpectrogramSettings;
+use spectrogram::{
+    SpectrogramIntensityPlotSettings, SpectrogramPhasePlotSettings, SpectrogramSettings,
+};
 
 use crate::app::editor_from_scratch::MyEditor;
 
@@ -34,7 +36,7 @@ impl SpectrogramApp {
                 TextureOptions::NEAREST,
             ),
             sized_tx: None,
-            editor: MyEditor::new(cc, 200, 150, 300),
+            editor: MyEditor::new(cc, 65, 4000, 44100, 2000f32),
         }
     }
 
@@ -55,8 +57,14 @@ impl SpectrogramApp {
         self.samples = samples;
         let mut res = spectrogram::forward::analyze_mt(&self.samples, &settings, 15).unwrap();
         println!("Spectrogram made");
-        let view_bytes = res.create_intensity_bytes(-3f32, 10f32);
-        let view_phase_bytes = res.create_phase_bytes(0f32);
+        let view_bytes = res.create_intensity_bytes(&SpectrogramIntensityPlotSettings {
+            bin_range: [0, 100],
+            intensity_range: [-3f32, 10f32],
+        });
+        let view_phase_bytes = res.create_phase_bytes(&SpectrogramPhasePlotSettings {
+            bin_range: [0, 100],
+            lower_seam: 0f32,
+        });
 
         let sane_reverse = spectrogram::inverse::inverse_mt(&res, &settings, 4, false);
 
@@ -86,7 +94,10 @@ impl SpectrogramApp {
         .save("results/phase.png")
         .unwrap();
 
-        let view_screwed_up_phase_bytes = res.create_phase_bytes(0f32);
+        let view_screwed_up_phase_bytes = res.create_phase_bytes(&SpectrogramPhasePlotSettings {
+            bin_range: [0, 100],
+            lower_seam: 0f32,
+        });
         ImageBuffer::<Luma<u8>, Vec<u8>>::from_vec(
             res.width as u32,
             res.height as u32,

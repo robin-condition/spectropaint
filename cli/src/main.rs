@@ -2,14 +2,17 @@ use std::{fs::File, time::Duration};
 
 use image::{ImageBuffer, Luma};
 use rodio::{Decoder, Source, buffer::SamplesBuffer};
-use spectrogram::{SpectrogramImage, SpectrogramSettings};
+use spectrogram::{
+    SpectrogramImage, SpectrogramIntensityPlotSettings, SpectrogramPhasePlotSettings,
+    SpectrogramSettings,
+};
 
 fn main() {
     let args: Vec<_> = std::env::args().collect();
 
     let settings = SpectrogramSettings {
-        window_size: 3000,
-        window_pad_amnt: 1096,
+        window_size: 4000,
+        window_pad_amnt: 0,
     };
     println!("{:?}", args);
     let audio: Box<dyn Source>;
@@ -39,14 +42,27 @@ fn main() {
 
     let mut res = spectrogram::forward::analyze_mt(&samples, &settings, 15).unwrap();
 
+    let intensity_settings = SpectrogramIntensityPlotSettings {
+        bin_range: [
+            0,
+            (2000f32 / sr as f32 * settings.window_size as f32) as usize,
+        ],
+        intensity_range: [0f32, 10f32],
+    };
+
+    let phase_settings = SpectrogramPhasePlotSettings {
+        bin_range: intensity_settings.bin_range.clone(),
+        lower_seam: 0f32,
+    };
+
     let sane_reverse = spectrogram::inverse::inverse_mt(&res, &settings, 2, false);
 
     let mut orig = SamplesBuffer::new(1, sr, sane_reverse);
     rodio::output_to_wav(&mut orig, "results/original_reconstructed.wav").unwrap();
 
     println!("Spectrogram made");
-    let view_bytes = res.create_intensity_bytes(-3f32, 10f32);
-    let view_phase_bytes = res.create_relative_phase_bytes(0f32);
+    let view_bytes = res.create_intensity_bytes(&intensity_settings);
+    let view_phase_bytes = res.create_relative_phase_bytes(&phase_settings);
 
     let masked_phase_bytes = {
         let mut bytes = view_phase_bytes.clone();
@@ -69,12 +85,16 @@ fn main() {
     let mut aud = SamplesBuffer::new(1, sr, reverse);
     rodio::output_to_wav(&mut aud, "results/mywav.wav").unwrap();
 
-    let img_buffer: ImageBuffer<Luma<u8>, Vec<_>> =
-        ImageBuffer::from_vec(res.width as u32, res.height as u32, view_bytes).unwrap();
+    let img_buffer: ImageBuffer<Luma<u8>, Vec<_>> = ImageBuffer::from_vec(
+        res.width as u32,
+        (intensity_settings.bin_range[1] - intensity_settings.bin_range[0]) as u32,
+        view_bytes,
+    )
+    .unwrap();
     img_buffer.save("results/dest.png").unwrap();
     ImageBuffer::<Luma<u8>, Vec<u8>>::from_vec(
         res.width as u32,
-        res.height as u32,
+        (intensity_settings.bin_range[1] - intensity_settings.bin_range[0]) as u32,
         view_phase_bytes,
     )
     .unwrap()
@@ -83,17 +103,17 @@ fn main() {
 
     ImageBuffer::<Luma<u8>, Vec<u8>>::from_vec(
         res.width as u32,
-        res.height as u32,
+        (intensity_settings.bin_range[1] - intensity_settings.bin_range[0]) as u32,
         masked_phase_bytes,
     )
     .unwrap()
     .save("results/masked_phase.png")
     .unwrap();
 
-    let view_screwed_up_phase_bytes = res.create_relative_phase_bytes(0f32);
+    let view_screwed_up_phase_bytes = res.create_relative_phase_bytes(&phase_settings);
     ImageBuffer::<Luma<u8>, Vec<u8>>::from_vec(
         res.width as u32,
-        res.height as u32,
+        (intensity_settings.bin_range[1] - intensity_settings.bin_range[0]) as u32,
         view_screwed_up_phase_bytes,
     )
     .unwrap()
