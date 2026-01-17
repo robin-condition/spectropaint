@@ -10,6 +10,7 @@ use rodio::Sample;
 use rustfft::{
     Fft,
     num_complex::{Complex, Complex32},
+    num_traits::ConstZero,
 };
 
 pub trait UThing {
@@ -257,6 +258,9 @@ impl SpectrogramImage {
     pub fn get_column(&self, x: usize, spectrum: &mut [Complex32]) {
         for y in 0..self.height {
             spectrum[y] = self.get_at(x, y);
+        }
+        for y in self.height..spectrum.len() {
+            spectrum[y] = Complex::ZERO;
         }
     }
 

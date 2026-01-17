@@ -7,12 +7,18 @@ use image::{EncodableLayout, ImageBuffer, Luma};
 use rodio::{OutputStream, Source, buffer::SamplesBuffer};
 use spectrogram::SpectrogramSettings;
 
+use crate::app::editor_from_scratch::MyEditor;
+
+pub mod editor_from_scratch;
+
 pub struct SpectrogramApp {
     file_dialog: FileDialog,
     stream: OutputStream,
     samples: Vec<f32>,
     image: TextureHandle,
     sized_tx: Option<SizedTexture>,
+
+    editor: editor_from_scratch::MyEditor,
 }
 
 impl SpectrogramApp {
@@ -28,6 +34,7 @@ impl SpectrogramApp {
                 TextureOptions::NEAREST,
             ),
             sized_tx: None,
+            editor: MyEditor::new(cc, 200, 150, 300),
         }
     }
 
@@ -46,19 +53,21 @@ impl SpectrogramApp {
         println!("{}", channels);
         let samples: Vec<_> = audio.step_by(channels as usize).collect();
         self.samples = samples;
-        let mut res = spectrogram::forward::analyze_mt::<u8>(&self.samples, &settings, 15).unwrap();
+        let mut res = spectrogram::forward::analyze_mt(&self.samples, &settings, 15).unwrap();
         println!("Spectrogram made");
         let view_bytes = res.create_intensity_bytes(-3f32, 10f32);
-        let view_phase_bytes = res.create_phase_bytes();
+        let view_phase_bytes = res.create_phase_bytes(0f32);
 
-        let sane_reverse = spectrogram::inverse::inverse_st(&res, &settings, false);
+        let sane_reverse = spectrogram::inverse::inverse_mt(&res, &settings, 4, false);
 
         // Nuke phase
         res.eliminate_phase();
         //res.apply_random_phases();
         res.apply_sinusoidal_phases(settings.window_size);
 
-        let reverse = spectrogram::inverse::inverse_st(&res, &settings, true);
+        //egui::containers::ScrollArea::both().show(ui, add_contents);
+
+        let reverse = spectrogram::inverse::inverse_mt(&res, &settings, 4, true);
         let mut aud = SamplesBuffer::new(1, sr, reverse);
         rodio::output_to_wav(&mut aud, "results/mywav.wav").unwrap();
 
@@ -77,7 +86,7 @@ impl SpectrogramApp {
         .save("results/phase.png")
         .unwrap();
 
-        let view_screwed_up_phase_bytes = res.create_phase_bytes();
+        let view_screwed_up_phase_bytes = res.create_phase_bytes(0f32);
         ImageBuffer::<Luma<u8>, Vec<u8>>::from_vec(
             res.width as u32,
             res.height as u32,
@@ -93,6 +102,8 @@ impl SpectrogramApp {
 impl App for SpectrogramApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
+            self.editor.show(ui);
+            return;
             if ui.button("Select audio file!").clicked() {
                 self.file_dialog.pick_file();
             }
