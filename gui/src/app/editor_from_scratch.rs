@@ -9,7 +9,13 @@ use egui::{
 use egui_file_dialog::FileDialog;
 use rodio::{OutputStream, buffer::SamplesBuffer};
 use rustfft::num_complex::{Complex, Complex32};
-use spectrogram::{SpectrogramImage, SpectrogramIntensityPlotSettings, SpectrogramSettings};
+use spectrogram::{
+    SpectrogramImage, SpectrogramIntensityPlotSettings, SpectrogramSettings, UThing,
+};
+
+use crate::app::editor_from_scratch::drawing::{
+    Brush, radius_brush::RadiusBrush, solid_mag_brush::SolidMagBrush,
+};
 
 pub struct MyEditor {
     image: TextureHandle,
@@ -27,12 +33,17 @@ pub struct MyEditor {
 
     scale: Vec2,
 
-    cursor_brightness: f32,
-
     intensity_settings: SpectrogramIntensityPlotSettings,
 
     sample_rate: usize,
+
+    default_brightness: f32,
+
+    primary_brush: Box<dyn Brush>,
+    secondary_brush: Box<dyn Brush>,
 }
+
+mod drawing;
 
 impl MyEditor {
     pub fn new(
@@ -45,6 +56,7 @@ impl MyEditor {
         let height = window_len / 2 + 1;
         let max_bin = SpectrogramImage::compute_bin_number(window_len, sample_rate, max_freq);
         let img_height = max_bin;
+        let default_bght = 20f32;
         Self {
             image: cc.egui_ctx.load_texture(
                 "hello",
@@ -63,10 +75,10 @@ impl MyEditor {
                 bin_range: [0, img_height],
                 intensity_range: [0f32, 10f32],
             },
-            cursor_brightness: 20f32,
             layout_img: None,
             sized_tx: None,
             width,
+            default_brightness: default_bght,
             sample_rate,
             img_height,
             file_picker: FileDialog::new(),
@@ -74,6 +86,9 @@ impl MyEditor {
             stream: rodio::OutputStreamBuilder::open_default_stream().unwrap(),
             samples: None,
             scale: vec2(15f32, 15f32),
+
+            primary_brush: Box::new(RadiusBrush::new(default_bght, 1f32)), //Box::new(SolidMagBrush::new(default_bght)),
+            secondary_brush: Box::new(SolidMagBrush::new(0f32)),
         }
     }
 
@@ -99,19 +114,15 @@ impl MyEditor {
         if resp.dragged() {
             if let Some(p) = resp.interact_pointer_pos() {
                 let norm = (p - resp.rect.min) / resp.rect.size();
+                let norm = vec2(norm.x, 1f32 - norm.y);
                 if norm.x >= 0f32 && norm.x < 1f32 && norm.y >= 0f32 && norm.y < 1f32 {
-                    let to_img_px = [
-                        (norm.x * self.width as f32) as usize,
-                        self.img_height - 1 - (norm.y * self.img_height as f32) as usize,
-                    ];
-
-                    let brightness = if resp.dragged_by(egui::PointerButton::Secondary) {
-                        0f32
+                    let brush_to_use = if resp.dragged_by(egui::PointerButton::Secondary) {
+                        &self.secondary_brush
                     } else {
-                        self.cursor_brightness
+                        &self.primary_brush
                     };
-                    *self.spectrogram.mut_get_at(to_img_px[0], to_img_px[1]) =
-                        Complex32::from(brightness);
+
+                    brush_to_use.apply(&mut self.spectrogram, [0, self.img_height], norm);
                     *changed = true;
                 }
             }
@@ -120,7 +131,7 @@ impl MyEditor {
         if resp.contains_pointer() && ui.input(|inp| inp.modifiers.ctrl) {
             let scrolled = ui.input(|inp| inp.raw_scroll_delta).y;
             if scrolled != 0f32 {
-                self.cursor_brightness *= (scrolled / 20f32).exp();
+                self.primary_brush.update_with_scroll(scrolled);
             }
         }
     }
@@ -159,6 +170,7 @@ impl MyEditor {
                                 uri: std::borrow::Cow::Owned("Hi".to_string()),
                                 bytes: overlay.clone(),
                             })
+                            .texture_options(TextureOptions::NEAREST)
                             .fit_to_exact_size(self.sized_tx.unwrap().size),
                             ui,
                             changed,
@@ -185,7 +197,7 @@ impl MyEditor {
             self.spectrogram.data = vec![Complex::ZERO; self.width * self.spectrogram.height];
             self.samples = None;
             self.sized_tx = None;
-            self.cursor_brightness = 20f32;
+            self.primary_brush = Box::new(RadiusBrush::new(self.default_brightness, 1f32)); //Box::new(SolidMagBrush::new(self.default_brightness));
             self.reset_img();
         }
     }

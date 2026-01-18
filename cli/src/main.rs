@@ -11,7 +11,7 @@ fn main() {
     let args: Vec<_> = std::env::args().collect();
 
     let settings = SpectrogramSettings {
-        window_size: 4000,
+        window_size: 5000,
         window_pad_amnt: 0,
     };
     println!("{:?}", args);
@@ -40,12 +40,14 @@ fn main() {
 
     //
 
+    let targ_freq = 8000f32;
+
     let mut res = spectrogram::forward::analyze_mt(&samples, &settings, 15).unwrap();
 
     let intensity_settings = SpectrogramIntensityPlotSettings {
         bin_range: [
             0,
-            (2000f32 / sr as f32 * settings.window_size as f32) as usize,
+            SpectrogramImage::compute_bin_number(settings.window_size, sr as usize, targ_freq),
         ],
         intensity_range: [0f32, 10f32],
     };
@@ -80,6 +82,8 @@ fn main() {
     res.eliminate_phase();
     //res.apply_random_phases();
     //res.apply_sinusoidal_phases(settings.window_size);
+    let intens = res.create_intensity_bytes(&intensity_settings);
+    res.phaseless_from_intensity_bytes(&intensity_settings, &intens, true);
 
     let reverse = spectrogram::inverse::inverse_mt(&res, &settings, 15, true);
     let mut aud = SamplesBuffer::new(1, sr, reverse);
