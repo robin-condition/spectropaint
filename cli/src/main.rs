@@ -11,7 +11,7 @@ fn main() {
     let args: Vec<_> = std::env::args().collect();
 
     let settings = SpectrogramSettings {
-        window_size: 5000,
+        window_size: 3000,
         window_pad_amnt: 0,
     };
     println!("{:?}", args);
